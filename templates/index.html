@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bike Mileage Leaderboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Bike Mileage Leaderboard</h1>
+            <p class="season-label" id="seasonLabel">
+                {% if season_status == 'pre' %}
+                    Season starts {{ season_start }}
+                {% elif season_status == 'post' %}
+                    {{ season_year }} Season &mdash; Final Results
+                {% else %}
+                    {{ season_year }} Season &mdash; {{ season_start }} to {{ season_end }}
+                {% endif %}
+            </p>
+        </header>
+
+        <section class="leaderboard" id="leaderboard">
+            <p class="loading">Loading&hellip;</p>
+        </section>
+
+        <section class="recent-rides">
+            <h2>Recent Rides</h2>
+            <ul id="recentRides">
+                <li class="loading">Loading&hellip;</li>
+            </ul>
+        </section>
+
+        <footer>
+            <p>Powered by <a href="https://www.strava.com" target="_blank" rel="noopener">Strava</a></p>
+        </footer>
+    </div>
+
+    <script>
+        function formatMiles(n) {
+            return Number(n).toFixed(1);
+        }
+
+        function renderLeaderboard(data) {
+            const board = document.getElementById("leaderboard");
+            const riders = data.leaderboard;
+
+            if (!riders || riders.length === 0) {
+                board.innerHTML = '<p class="empty">No riders registered yet.</p>';
+                return;
+            }
+
+            const maxMiles = Math.max(...riders.map(r => r.total_miles), 1);
+
+            let html = '<div class="riders">';
+            riders.forEach((rider, idx) => {
+                const pct = Math.min((rider.total_miles / maxMiles) * 100, 100);
+                const rankClass = idx === 0 && rider.total_miles > 0 ? "leader" : "";
+                const avatar = rider.avatar_url
+                    ? `<img src="${rider.avatar_url}" alt="${rider.name}" class="avatar">`
+                    : `<div class="avatar placeholder">${rider.name.charAt(0)}</div>`;
+
+                html += `
+                    <div class="rider-card ${rankClass}">
+                        <div class="rider-header">
+                            ${avatar}
+                            <div class="rider-info">
+                                <span class="rider-name">${rider.name}</span>
+                                <span class="rider-stats">${rider.ride_count} ride${rider.ride_count !== 1 ? 's' : ''}</span>
+                            </div>
+                            <span class="rider-miles">${formatMiles(rider.total_miles)} mi</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${pct}%"></div>
+                        </div>
+                    </div>`;
+            });
+            html += '</div>';
+            board.innerHTML = html;
+        }
+
+        function renderRecent(rides) {
+            const list = document.getElementById("recentRides");
+
+            if (!rides || rides.length === 0) {
+                list.innerHTML = '<li class="empty">No rides yet this season.</li>';
+                return;
+            }
+
+            list.innerHTML = rides.map(r => `
+                <li>
+                    <span class="ride-athlete">${r.athlete_name}</span>
+                    <span class="ride-name">${r.ride_name || 'Ride'}</span>
+                    <span class="ride-distance">${formatMiles(r.distance_miles)} mi</span>
+                    <span class="ride-date">${r.ride_date}</span>
+                </li>
+            `).join('');
+        }
+
+        async function refresh() {
+            try {
+                const resp = await fetch("/api/leaderboard");
+                const data = await resp.json();
+                renderLeaderboard(data);
+                renderRecent(data.recent_rides);
+            } catch (err) {
+                console.error("Failed to refresh leaderboard:", err);
+            }
+        }
+
+        refresh();
+        setInterval(refresh, 60000);
+    </script>
+</body>
+</html>
