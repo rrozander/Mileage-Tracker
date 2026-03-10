@@ -6,7 +6,7 @@ import models
 STRAVA_API_BASE = "https://www.strava.com/api/v3"
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 
-METERS_TO_MILES = 0.000621371
+METERS_TO_KM = 0.001
 
 
 def _get_valid_token(athlete):
@@ -57,9 +57,9 @@ def get_athlete_profile(access_token):
     return resp.json()
 
 
-def activity_distance_miles(activity):
-    """Extract distance in miles from a Strava activity dict."""
-    return activity.get("distance", 0) * METERS_TO_MILES
+def activity_distance_km(activity):
+    """Extract distance in kilometers from a Strava activity dict."""
+    return activity.get("distance", 0) * METERS_TO_KM
 
 
 def activity_ride_date(activity):

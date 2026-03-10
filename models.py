@@ -29,7 +29,7 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             strava_activity_id INTEGER UNIQUE NOT NULL,
             athlete_id INTEGER NOT NULL,
-            distance_miles REAL NOT NULL,
+            distance_km REAL NOT NULL,
             ride_date TEXT NOT NULL,
             name TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -81,16 +81,16 @@ def get_athlete_by_strava_id(strava_id):
     return dict(row) if row else None
 
 
-def upsert_activity(strava_activity_id, athlete_id, distance_miles, ride_date, name):
+def upsert_activity(strava_activity_id, athlete_id, distance_km, ride_date, name):
     conn = get_db()
     conn.execute("""
-        INSERT INTO activities (strava_activity_id, athlete_id, distance_miles, ride_date, name)
+        INSERT INTO activities (strava_activity_id, athlete_id, distance_km, ride_date, name)
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(strava_activity_id) DO UPDATE SET
-            distance_miles=excluded.distance_miles,
+            distance_km=excluded.distance_km,
             ride_date=excluded.ride_date,
             name=excluded.name
-    """, (strava_activity_id, athlete_id, distance_miles, ride_date, name))
+    """, (strava_activity_id, athlete_id, distance_km, ride_date, name))
     conn.commit()
     conn.close()
 
@@ -123,7 +123,7 @@ def get_leaderboard_stats(year=None):
             a.strava_id,
             a.name,
             a.avatar_url,
-            COALESCE(SUM(act.distance_miles), 0) AS total_miles,
+            COALESCE(SUM(act.distance_km), 0) AS total_km,
             COUNT(act.id) AS ride_count
         FROM athletes a
         LEFT JOIN activities act
@@ -131,7 +131,7 @@ def get_leaderboard_stats(year=None):
             AND act.ride_date >= ?
             AND act.ride_date < ?
         GROUP BY a.id
-        ORDER BY total_miles DESC
+        ORDER BY total_km DESC
     """, (season_start, season_end)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -143,7 +143,7 @@ def get_recent_rides(limit=10, year=None):
     rows = conn.execute("""
         SELECT
             act.name AS ride_name,
-            act.distance_miles,
+            act.distance_km,
             act.ride_date,
             a.name AS athlete_name,
             a.avatar_url

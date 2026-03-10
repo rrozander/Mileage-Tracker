@@ -119,7 +119,7 @@ header h1 {
     font-size: 0.85rem;
 }
 
-.rider-miles {
+.rider-km {
     font-size: 1.5rem;
     font-weight: 700;
     color: var(--accent);
@@ -232,7 +232,7 @@ footer a:hover {
         font-size: 1.4rem;
     }
 
-    .rider-miles {
+    .rider-km {
         font-size: 1.25rem;
     }
 

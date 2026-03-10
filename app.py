@@ -136,11 +136,11 @@ def _handle_activity_event(data):
         logger.info("Ignoring out-of-season ride %s (date=%s)", activity_id, ride_date)
         return
 
-    distance = strava_client.activity_distance_miles(activity)
+    distance = strava_client.activity_distance_km(activity)
     name = activity.get("name", "Ride")
 
     models.upsert_activity(activity_id, athlete["id"], distance, ride_date, name)
-    logger.info("Saved ride %s: %.1f mi by %s", activity_id, distance, athlete["name"])
+    logger.info("Saved ride %s: %.1f km by %s", activity_id, distance, athlete["name"])
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 # Bike Mileage Leaderboard
 
-A self-hosted leaderboard that tracks bike mileage between two riders using the Strava API.
+A self-hosted leaderboard that tracks bike kilometers between two riders using the Strava API.
 The page is publicly accessible (no login required) and updates automatically via Strava webhooks whenever a ride is posted.
 
 **Season window:** April 1 -- September 1 (configurable in `.env`).
