@@ -2,6 +2,47 @@ import sqlite3
 import os
 from datetime import date
 
+STRAVA_APPS = {}
+
+
+def _load_strava_apps():
+    """Discover configured Strava apps from env vars (STRAVA_CLIENT_ID_<NAME>)."""
+    global STRAVA_APPS
+    STRAVA_APPS.clear()
+    for key, val in os.environ.items():
+        if key.startswith("STRAVA_CLIENT_ID_"):
+            name = key[len("STRAVA_CLIENT_ID_"):]
+            STRAVA_APPS[name] = {
+                "client_id": val,
+                "client_secret": os.getenv(f"STRAVA_CLIENT_SECRET_{name}", ""),
+                "verify_token": os.getenv(f"WEBHOOK_VERIFY_TOKEN_{name}", ""),
+            }
+
+
+def get_app_credentials(app_name):
+    """Return (client_id, client_secret) for a named Strava app."""
+    if not STRAVA_APPS:
+        _load_strava_apps()
+    app = STRAVA_APPS.get(app_name)
+    if not app:
+        raise ValueError(f"No Strava app configured for '{app_name}'. "
+                         f"Available: {list(STRAVA_APPS.keys())}")
+    return app["client_id"], app["client_secret"]
+
+
+def get_all_verify_tokens():
+    """Return a set of all configured webhook verify tokens."""
+    if not STRAVA_APPS:
+        _load_strava_apps()
+    return {app["verify_token"] for app in STRAVA_APPS.values() if app["verify_token"]}
+
+
+def get_app_names():
+    """Return list of configured Strava app names."""
+    if not STRAVA_APPS:
+        _load_strava_apps()
+    return list(STRAVA_APPS.keys())
+
 
 def get_db():
     db_path = os.getenv("DATABASE_PATH", "mileage.db")
@@ -22,7 +63,8 @@ def init_db():
             avatar_url TEXT,
             access_token TEXT NOT NULL,
             refresh_token TEXT NOT NULL,
-            token_expires_at INTEGER NOT NULL
+            token_expires_at INTEGER NOT NULL,
+            strava_app TEXT NOT NULL DEFAULT ''
         );
 
         CREATE TABLE IF NOT EXISTS activities (
@@ -41,22 +83,33 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_activities_ride_date
             ON activities(ride_date);
     """)
+    _migrate_strava_app_column(conn)
     conn.commit()
     conn.close()
 
 
-def upsert_athlete(strava_id, name, avatar_url, access_token, refresh_token, token_expires_at):
+def _migrate_strava_app_column(conn):
+    """Add strava_app column if upgrading from an older schema."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(athletes)").fetchall()]
+    if "strava_app" not in cols:
+        conn.execute("ALTER TABLE athletes ADD COLUMN strava_app TEXT NOT NULL DEFAULT ''")
+
+
+def upsert_athlete(strava_id, name, avatar_url, access_token, refresh_token,
+                   token_expires_at, strava_app=""):
     conn = get_db()
     conn.execute("""
-        INSERT INTO athletes (strava_id, name, avatar_url, access_token, refresh_token, token_expires_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO athletes (strava_id, name, avatar_url, access_token, refresh_token,
+                              token_expires_at, strava_app)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(strava_id) DO UPDATE SET
             name=excluded.name,
             avatar_url=excluded.avatar_url,
             access_token=excluded.access_token,
             refresh_token=excluded.refresh_token,
-            token_expires_at=excluded.token_expires_at
-    """, (strava_id, name, avatar_url, access_token, refresh_token, token_expires_at))
+            token_expires_at=excluded.token_expires_at,
+            strava_app=excluded.strava_app
+    """, (strava_id, name, avatar_url, access_token, refresh_token, token_expires_at, strava_app))
     conn.commit()
     conn.close()
 
@@ -132,6 +185,25 @@ def get_leaderboard_stats(year=None):
             AND act.ride_date < ?
         GROUP BY a.id
         ORDER BY total_km DESC
+    """, (season_start, season_end)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_distance_timeline(year=None):
+    """Return all rides within the season sorted by date, for charting."""
+    season_start, season_end = get_season_bounds(year)
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT
+            a.name AS athlete_name,
+            act.ride_date,
+            act.distance_km,
+            act.name AS ride_name
+        FROM activities act
+        JOIN athletes a ON a.id = act.athlete_id
+        WHERE act.ride_date >= ? AND act.ride_date < ?
+        ORDER BY act.ride_date
     """, (season_start, season_end)).fetchall()
     conn.close()
     return [dict(r) for r in rows]

@@ -8,7 +8,7 @@ The page is publicly accessible (no login required) and updates automatically vi
 ## Prerequisites
 
 - Python 3.9+
-- A [Strava API application](https://www.strava.com/settings/api)
+- A [Strava API application](https://www.strava.com/settings/api) **per rider** (Strava limits each app to one authenticated athlete)
 - A publicly reachable URL for webhooks (e.g. Cloudflare Tunnel on a Raspberry Pi)
 
 ## Quick Start
@@ -25,18 +25,29 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` and fill in your Strava Client ID and Client Secret from <https://www.strava.com/settings/api>.  
-Pick any random string for `WEBHOOK_VERIFY_TOKEN`.
+Edit `.env` and fill in the Strava Client ID and Client Secret for **each rider's app** from <https://www.strava.com/settings/api>.  
+Pick any random string for each `WEBHOOK_VERIFY_TOKEN_<NAME>`.
+
+```
+STRAVA_CLIENT_ID_RILEY=...
+STRAVA_CLIENT_SECRET_RILEY=...
+WEBHOOK_VERIFY_TOKEN_RILEY=...
+
+STRAVA_CLIENT_ID_JASON=...
+STRAVA_CLIENT_SECRET_JASON=...
+WEBHOOK_VERIFY_TOKEN_JASON=...
+```
 
 ### 3. Authorize each rider
 
-Run the authorize script once per rider. It opens a browser for Strava OAuth and stores the tokens in the local SQLite database.
+Run the authorize script once per rider, specifying the app name that matches the `.env` suffix. It opens a browser for Strava OAuth and stores the tokens in the local SQLite database.
 
 ```bash
-python authorize.py
+python authorize.py RILEY
+python authorize.py JASON
 ```
 
-Repeat for the second rider (log into their Strava account first, or have them run it on their machine and copy the resulting `mileage.db`).
+Each rider should be logged into their own Strava account when authorizing.
 
 ### 4. Start the app
 
@@ -68,18 +79,20 @@ cloudflared tunnel route dns mileage-tracker leaderboard.yourdomain.com
 cloudflared tunnel --url http://localhost:5000 run mileage-tracker
 ```
 
-### 6. Register the Strava webhook
+### 6. Register the Strava webhooks
 
-Once the app is publicly accessible, register the webhook so Strava pushes ride events:
+Each Strava app needs its own webhook subscription. Register one per rider:
 
 ```bash
-python setup_webhook.py create https://leaderboard.yourdomain.com/webhook
+python setup_webhook.py RILEY create https://leaderboard.yourdomain.com/webhook
+python setup_webhook.py JASON create https://leaderboard.yourdomain.com/webhook
 ```
 
-Verify the subscription:
+Verify the subscriptions:
 
 ```bash
-python setup_webhook.py view
+python setup_webhook.py RILEY view
+python setup_webhook.py JASON view
 ```
 
 ## Running in Production
@@ -134,7 +147,7 @@ sudo systemctl enable --now mileage-tracker
 
 ## How It Works
 
-1. Both riders authorize the app via `authorize.py` (one-time OAuth flow).
+1. Each rider authorizes via their own Strava app using `authorize.py <APP_NAME>` (one-time OAuth flow).
 2. Strava sends a webhook `POST` to `/webhook` whenever a ride is created, updated, or deleted.
 3. The app fetches the ride details from Strava, checks that it's a bike ride within the season window, and stores it in SQLite.
 4. The public leaderboard at `/` reads from the database and auto-refreshes every 60 seconds.

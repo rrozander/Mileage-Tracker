@@ -1,4 +1,3 @@
-import os
 import threading
 import logging
 from datetime import date
@@ -56,10 +55,12 @@ def index():
 def api_leaderboard():
     stats = models.get_leaderboard_stats()
     recent = models.get_recent_rides(limit=10)
+    timeline = models.get_distance_timeline()
     season_start, season_end = models.get_season_bounds()
     return jsonify({
         "leaderboard": stats,
         "recent_rides": recent,
+        "distance_timeline": timeline,
         "season_start": season_start,
         "season_end": season_end,
     })
@@ -75,7 +76,7 @@ def webhook_verify():
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
 
-    if mode == "subscribe" and token == os.getenv("WEBHOOK_VERIFY_TOKEN"):
+    if mode == "subscribe" and token in models.get_all_verify_tokens():
         logger.info("Webhook subscription verified")
         return jsonify({"hub.challenge": challenge})
 

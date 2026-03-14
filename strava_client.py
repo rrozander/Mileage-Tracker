@@ -1,4 +1,3 @@
-import os
 import time
 import requests
 import models
@@ -10,13 +9,15 @@ METERS_TO_KM = 0.001
 
 
 def _get_valid_token(athlete):
-    """Return a valid access token, refreshing if expired."""
+    """Return a valid access token, refreshing with the athlete's app credentials if expired."""
     if athlete["token_expires_at"] > time.time():
         return athlete["access_token"]
 
+    client_id, client_secret = models.get_app_credentials(athlete["strava_app"])
+
     resp = requests.post(STRAVA_TOKEN_URL, data={
-        "client_id": os.getenv("STRAVA_CLIENT_ID"),
-        "client_secret": os.getenv("STRAVA_CLIENT_SECRET"),
+        "client_id": client_id,
+        "client_secret": client_secret,
         "grant_type": "refresh_token",
         "refresh_token": athlete["refresh_token"],
     }, timeout=10)

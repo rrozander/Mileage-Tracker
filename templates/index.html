@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bike Mileage Leaderboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -23,6 +25,13 @@
 
         <section class="leaderboard" id="leaderboard">
             <p class="loading">Loading&hellip;</p>
+        </section>
+
+        <section class="distance-chart">
+            <h2>Distance Overview</h2>
+            <div class="chart-wrapper">
+                <canvas id="distanceChart"></canvas>
+            </div>
         </section>
 
         <section class="recent-rides">
@@ -80,6 +89,103 @@
             board.innerHTML = html;
         }
 
+        const LINE_COLORS = [
+            "#f97316", "#38bdf8", "#a78bfa", "#4ade80",
+            "#fb7185", "#facc15", "#2dd4bf", "#e879f9",
+        ];
+
+        let distanceChartInstance = null;
+
+        function buildPerRideDatasets(timeline) {
+            const byRider = {};
+            timeline.forEach(({ athlete_name, ride_date, distance_km, ride_name }) => {
+                if (!byRider[athlete_name]) byRider[athlete_name] = [];
+                byRider[athlete_name].push({
+                    date: ride_date,
+                    km: distance_km,
+                    rideName: ride_name || "Ride",
+                });
+            });
+
+            return Object.entries(byRider).map(([name, rides], idx) => {
+                let cumulative = 0;
+                const points = rides.map(r => {
+                    cumulative += r.km;
+                    return {
+                        x: r.date,
+                        y: Math.round(cumulative * 10) / 10,
+                        rideKm: Math.round(r.km * 10) / 10,
+                        rideName: r.rideName,
+                    };
+                });
+
+                const color = LINE_COLORS[idx % LINE_COLORS.length];
+                return {
+                    label: name,
+                    data: points,
+                    borderColor: color,
+                    backgroundColor: color + "33",
+                    fill: false,
+                    tension: 0.3,
+                    pointRadius: 4,
+                    pointHoverRadius: 7,
+                    borderWidth: 2,
+                };
+            });
+        }
+
+        function renderDistanceChart(timeline) {
+            const ctx = document.getElementById("distanceChart");
+            if (!timeline || timeline.length === 0) return;
+
+            const datasets = buildPerRideDatasets(timeline);
+
+            if (distanceChartInstance) {
+                distanceChartInstance.data.datasets = datasets;
+                distanceChartInstance.update();
+                return;
+            }
+
+            distanceChartInstance = new Chart(ctx, {
+                type: "line",
+                data: { datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: "nearest", intersect: true },
+                    plugins: {
+                        legend: {
+                            labels: { color: "#f1f5f9", boxWidth: 14 },
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: (item) => {
+                                    const pt = item.dataset.data[item.dataIndex];
+                                    return `${item.dataset.label}: ${pt.rideKm} km ride (${pt.y} km total) — ${pt.rideName}`;
+                                },
+                            },
+                        },
+                    },
+                    scales: {
+                        x: {
+                            type: "time",
+                            time: { unit: "week", tooltipFormat: "MMM d" },
+                            ticks: { color: "#94a3b8" },
+                            grid: { display: false },
+                        },
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: "#94a3b8",
+                                callback: (v) => `${v} km`,
+                            },
+                            grid: { color: "rgba(71, 85, 105, 0.4)" },
+                        },
+                    },
+                },
+            });
+        }
+
         function renderRecent(rides) {
             const list = document.getElementById("recentRides");
 
@@ -103,6 +209,7 @@
                 const resp = await fetch("/api/leaderboard");
                 const data = await resp.json();
                 renderLeaderboard(data);
+                renderDistanceChart(data.distance_timeline);
                 renderRecent(data.recent_rides);
             } catch (err) {
                 console.error("Failed to refresh leaderboard:", err);
