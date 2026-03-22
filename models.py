@@ -1,6 +1,6 @@
 import sqlite3
 import os
-from datetime import date
+from datetime import date, timedelta
 
 STRAVA_APPS = {}
 
@@ -207,6 +207,34 @@ def get_distance_timeline(year=None):
     """, (season_start, season_end)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_rides_for_week():
+    """Return rides from the past 7 days, grouped by athlete name.
+
+    Returns a dict: {athlete_name: [{"ride_name", "distance_km", "ride_date"}, ...]}.
+    """
+    today = date.today().isoformat()
+    week_ago = (date.today() - timedelta(days=7)).isoformat()
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT
+            a.name AS athlete_name,
+            act.name AS ride_name,
+            act.distance_km,
+            act.ride_date
+        FROM activities act
+        JOIN athletes a ON a.id = act.athlete_id
+        WHERE act.ride_date >= ? AND act.ride_date < ?
+        ORDER BY a.name, act.ride_date
+    """, (week_ago, today)).fetchall()
+    conn.close()
+
+    grouped = {}
+    for r in rows:
+        d = dict(r)
+        grouped.setdefault(d.pop("athlete_name"), []).append(d)
+    return grouped
 
 
 def get_recent_rides(limit=10, year=None):

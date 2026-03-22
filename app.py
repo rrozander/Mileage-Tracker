@@ -1,3 +1,4 @@
+import os
 import threading
 import logging
 from datetime import date
@@ -6,13 +7,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from flask import Flask, request, jsonify, render_template
+from apscheduler.schedulers.background import BackgroundScheduler
 
 import models
 import strava_client
+import notifications
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+DAY_MAP = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
 _db_initialized = False
 
@@ -140,8 +145,45 @@ def _handle_activity_event(data):
     distance = strava_client.activity_distance_km(activity)
     name = activity.get("name", "Ride")
 
+    old_standings = models.get_leaderboard_stats()
     models.upsert_activity(activity_id, athlete["id"], distance, ride_date, name)
+    new_standings = models.get_leaderboard_stats()
     logger.info("Saved ride %s: %.1f km by %s", activity_id, distance, athlete["name"])
+
+    try:
+        notifications.check_and_notify_surpass(
+            athlete["name"], distance, old_standings, new_standings,
+        )
+    except Exception:
+        logger.exception("Failed to send surpass notification")
+
+
+# ---------------------------------------------------------------------------
+# Scheduled jobs
+# ---------------------------------------------------------------------------
+
+def _start_scheduler():
+    recap_day = os.getenv("WEEKLY_RECAP_DAY", "mon").lower()
+    recap_hour = int(os.getenv("WEEKLY_RECAP_HOUR", "8"))
+    day_of_week = DAY_MAP.get(recap_day, 0)
+
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(
+        notifications.send_weekly_recap,
+        trigger="cron",
+        day_of_week=day_of_week,
+        hour=recap_hour,
+        minute=0,
+        id="weekly_recap",
+    )
+    scheduler.start()
+    logger.info(
+        "Weekly recap scheduled for %s at %02d:00",
+        recap_day.capitalize(), recap_hour,
+    )
+
+
+_start_scheduler()
 
 
 # ---------------------------------------------------------------------------
