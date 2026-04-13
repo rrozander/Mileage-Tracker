@@ -121,7 +121,16 @@
                             </div>
                             <div class="rider-stat">
                                 <span class="rider-stat-label">This week${weekRange ? ` (${weekRange})` : ''}</span>
-                                <span class="rider-stat-value">${formatOptional(rider.week_km, ' km')}${rider.week_avg_kmh != null ? ` @ ${formatKm(rider.week_avg_kmh)} km/h` : ''}</span>
+                                <div class="rider-stat-subs">
+                                    <div class="rider-stat-sub">
+                                        <span class="rider-stat-sublabel">Distance</span>
+                                        <span class="rider-stat-value">${formatOptional(rider.week_km, ' km')}</span>
+                                    </div>
+                                    <div class="rider-stat-sub">
+                                        <span class="rider-stat-sublabel">Avg speed</span>
+                                        <span class="rider-stat-value">${formatOptional(rider.week_avg_kmh, ' km/h')}</span>
+                                    </div>
+                                </div>
                             </div>
                             <div class="rider-stat rider-stat-wide rider-stat-actions">
                                 <a class="strava-link" href="${stravaUrl}" target="_blank" rel="noopener noreferrer">View Strava</a>
