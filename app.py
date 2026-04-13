@@ -1,7 +1,7 @@
 import os
 import threading
 import logging
-from datetime import date
+from datetime import date, datetime
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -16,6 +16,15 @@ import notifications
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+@app.template_filter("prettydate")
+def prettydate_filter(value):
+    """Turn 'YYYY-MM-DD' into 'Mon DD, YYYY' (e.g. 'Apr 01, 2026')."""
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%b %d, %Y")
+    except (ValueError, TypeError):
+        return value
 
 DAY_MAP = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
@@ -62,12 +71,36 @@ def api_leaderboard():
     recent = models.get_recent_rides(limit=10)
     timeline = models.get_distance_timeline()
     season_start, season_end = models.get_season_bounds()
+    week_start, week_end = models.current_week_iso_bounds()
+    week_map = models.get_week_stats_by_athlete(week_start, week_end)
+
+    if stats:
+        leader_km = stats[0]["total_km"]
+        for row in stats:
+            row["behind_leader_km"] = round(leader_km - row["total_km"], 1)
+            ws = week_map.get(row["athlete_id"], {})
+            row["week_km"] = round(ws.get("week_km", 0), 1)
+            wv = ws.get("week_avg_kmh")
+            row["week_avg_kmh"] = round(wv, 1) if wv is not None else None
+            rc = row["ride_count"]
+            row["avg_ride_km"] = round(row["total_km"] / rc, 1) if rc else None
+            v = row.get("overall_avg_kmh")
+            if v is not None:
+                row["overall_avg_kmh"] = round(v, 1)
+
+    for ride in recent:
+        v = ride.get("avg_kmh")
+        if v is not None:
+            ride["avg_kmh"] = round(v, 1)
+
     return jsonify({
         "leaderboard": stats,
         "recent_rides": recent,
         "distance_timeline": timeline,
         "season_start": season_start,
         "season_end": season_end,
+        "week_start": week_start,
+        "week_end": week_end,
     })
 
 
@@ -144,9 +177,14 @@ def _handle_activity_event(data):
 
     distance = strava_client.activity_distance_km(activity)
     name = activity.get("name", "Ride")
+    mt = strava_client.activity_moving_time_s(activity)
+    moving_time_s = mt if mt > 0 else None
 
     old_standings = models.get_leaderboard_stats()
-    models.upsert_activity(activity_id, athlete["id"], distance, ride_date, name)
+    models.upsert_activity(
+        activity_id, athlete["id"], distance, ride_date, name,
+        moving_time_s=moving_time_s,
+    )
     new_standings = models.get_leaderboard_stats()
     logger.info("Saved ride %s: %.1f km by %s", activity_id, distance, athlete["name"])
 

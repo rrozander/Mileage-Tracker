@@ -67,3 +67,14 @@ def activity_ride_date(activity):
     """Extract the ride date as YYYY-MM-DD from a Strava activity dict."""
     start = activity.get("start_date_local", "")
     return start[:10] if start else ""
+
+
+def activity_moving_time_s(activity):
+    """Strava moving_time in seconds, or 0 if missing."""
+    t = activity.get("moving_time")
+    if t is None:
+        return 0
+    try:
+        return int(t)
+    except (TypeError, ValueError):
+        return 0

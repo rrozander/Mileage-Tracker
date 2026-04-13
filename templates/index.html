@@ -14,11 +14,11 @@
             <h1>Bike Mileage Leaderboard</h1>
             <p class="season-label" id="seasonLabel">
                 {% if season_status == 'pre' %}
-                    Season starts {{ season_start }}
+                    Season starts {{ season_start | prettydate }}
                 {% elif season_status == 'post' %}
                     {{ season_year }} Season &mdash; Final Results
                 {% else %}
-                    {{ season_year }} Season &mdash; {{ season_start }} to {{ season_end }}
+                    {{ season_year }} Season &mdash; {{ season_start | prettydate }} to {{ season_end | prettydate }}
                 {% endif %}
             </p>
         </header>
@@ -51,6 +51,21 @@
             return Number(n).toFixed(1);
         }
 
+        function formatOptional(n, suffix = '') {
+            if (n == null || Number.isNaN(Number(n))) return '—';
+            return formatKm(n) + suffix;
+        }
+
+        const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+        function formatDate(isoStr) {
+            if (!isoStr) return isoStr;
+            const parts = isoStr.split('-');
+            if (parts.length !== 3) return isoStr;
+            const m = parseInt(parts[1], 10) - 1;
+            return `${MONTH_NAMES[m]} ${parseInt(parts[2], 10)}, ${parts[0]}`;
+        }
+
         function renderLeaderboard(data) {
             const board = document.getElementById("leaderboard");
             const riders = data.leaderboard;
@@ -62,6 +77,9 @@
 
             const maxKm = Math.max(...riders.map(r => r.total_km), 1);
 
+            const weekRange = data.week_start && data.week_end
+                ? `${formatDate(data.week_start)} – ${formatDate(data.week_end)}` : '';
+
             let html = '<div class="riders">';
             riders.forEach((rider, idx) => {
                 const pct = Math.min((rider.total_km / maxKm) * 100, 100);
@@ -69,6 +87,11 @@
                 const avatar = rider.avatar_url
                     ? `<img src="${rider.avatar_url}" alt="${rider.name}" class="avatar">`
                     : `<div class="avatar placeholder">${rider.name.charAt(0)}</div>`;
+                const behind =
+                    rider.behind_leader_km <= 0
+                        ? 'Leader'
+                        : `${formatKm(rider.behind_leader_km)} km behind`;
+                const stravaUrl = `https://www.strava.com/athletes/${rider.strava_id}`;
 
                 html += `
                     <div class="rider-card ${rankClass}">
@@ -82,6 +105,36 @@
                         </div>
                         <div class="progress-bar">
                             <div class="progress-fill" style="width: ${pct}%"></div>
+                        </div>
+                        <div class="rider-details">
+                            <div class="rider-stat">
+                                <span class="rider-stat-label">Behind leader</span>
+                                <span class="rider-stat-value">${behind}</span>
+                            </div>
+                            <div class="rider-stat">
+                                <span class="rider-stat-label">Avg ride length</span>
+                                <span class="rider-stat-value">${formatOptional(rider.avg_ride_km, ' km')}</span>
+                            </div>
+                            <div class="rider-stat">
+                                <span class="rider-stat-label">Avg speed (season)</span>
+                                <span class="rider-stat-value">${formatOptional(rider.overall_avg_kmh, ' km/h')}</span>
+                            </div>
+                            <div class="rider-stat">
+                                <span class="rider-stat-label">This week${weekRange ? ` (${weekRange})` : ''}</span>
+                                <div class="rider-stat-subs">
+                                    <div class="rider-stat-sub">
+                                        <span class="rider-stat-sublabel">Distance</span>
+                                        <span class="rider-stat-value">${formatOptional(rider.week_km, ' km')}</span>
+                                    </div>
+                                    <div class="rider-stat-sub">
+                                        <span class="rider-stat-sublabel">Avg speed</span>
+                                        <span class="rider-stat-value">${formatOptional(rider.week_avg_kmh, ' km/h')}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="rider-stat rider-stat-wide rider-stat-actions">
+                                <a class="strava-link" href="${stravaUrl}" target="_blank" rel="noopener noreferrer">View Strava</a>
+                            </div>
                         </div>
                     </div>`;
             });
@@ -199,7 +252,8 @@
                     <span class="ride-athlete">${r.athlete_name}</span>
                     <span class="ride-name">${r.ride_name || 'Ride'}</span>
                     <span class="ride-distance">${formatKm(r.distance_km)} km</span>
-                    <span class="ride-date">${r.ride_date}</span>
+                    ${r.avg_kmh != null ? `<span class="ride-speed">${formatKm(r.avg_kmh)} km/h</span>` : ''}
+                    <span class="ride-date">${formatDate(r.ride_date)}</span>
                 </li>
             `).join('');
         }
