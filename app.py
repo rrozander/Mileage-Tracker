@@ -83,6 +83,9 @@ def api_leaderboard():
             row["behind_leader_km"] = round(leader_km - row["total_km"], 1)
             ws = week_map.get(row["athlete_id"], {})
             row["week_km"] = round(ws.get("week_km", 0), 1)
+            row["week_ride_count"] = ws.get("week_ride_count", 0)
+            wl = ws.get("week_longest_km")
+            row["week_longest_km"] = round(wl, 1) if wl is not None else None
             wv = ws.get("week_avg_kmh")
             row["week_avg_kmh"] = round(wv, 1) if wv is not None else None
             rc = row["ride_count"]

@@ -219,12 +219,14 @@ def current_week_iso_bounds():
 
 
 def get_week_stats_by_athlete(week_start, week_end):
-    """Per-athlete weekly km and avg speed for ride_date in [week_start, week_end]."""
+    """Per-athlete weekly km, ride count, longest ride, and avg speed."""
     conn = get_db()
     rows = conn.execute("""
         SELECT
             athlete_id,
             COALESCE(SUM(distance_km), 0) AS week_km,
+            COUNT(*) AS week_ride_count,
+            MAX(distance_km) AS week_longest_km,
             CASE
                 WHEN SUM(CASE WHEN moving_time_s IS NOT NULL AND moving_time_s > 0
                               THEN moving_time_s ELSE 0 END) > 0

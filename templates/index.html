@@ -1,10 +1,13 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bike Mileage Leaderboard</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.png') }}" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ cache_bust }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
@@ -12,7 +15,17 @@
 <body>
     <div class="container">
         <header>
-            <h1>Bike Mileage Leaderboard</h1>
+            <div class="header-row">
+                <h1>Bike Mileage Leaderboard</h1>
+                <button id="themeToggle" class="theme-toggle" aria-label="Toggle theme">
+                    <svg class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                        <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                    </svg>
+                    <svg class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+                    </svg>
+                </button>
+            </div>
             <p class="season-label" id="seasonLabel">
                 {% if season_status == 'pre' %}
                     Season starts {{ season_start | prettydate }}
@@ -22,24 +35,29 @@
                     {{ season_year }} Season &mdash; {{ season_start | prettydate }} to {{ season_end | prettydate }}
                 {% endif %}
             </p>
+            <div class="season-progress" id="seasonProgress"></div>
         </header>
 
-        <section class="leaderboard" id="leaderboard">
+        <section id="versusSection">
             <p class="loading">Loading&hellip;</p>
         </section>
 
-        <section class="distance-chart">
-            <h2>Distance Overview</h2>
+        <section class="weekly-section" id="weeklySection"></section>
+
+        <section class="heatmap-section" id="heatmapSection"></section>
+
+        <section class="chart-section">
+            <h2 class="section-title">Cumulative Distance</h2>
             <div class="chart-wrapper">
                 <canvas id="distanceChart"></canvas>
             </div>
         </section>
 
-        <section class="recent-rides">
-            <h2>Recent Rides</h2>
-            <ul id="recentRides">
-                <li class="loading">Loading&hellip;</li>
-            </ul>
+        <section class="recent-section">
+            <h2 class="section-title">Recent Rides</h2>
+            <div class="rides-columns" id="recentRides">
+                <p class="loading">Loading&hellip;</p>
+            </div>
         </section>
 
         <footer>
@@ -47,232 +65,13 @@
         </footer>
     </div>
 
-    <script>
-        function formatKm(n) {
-            return Number(n).toFixed(1);
-        }
-
-        function formatOptional(n, suffix = '') {
-            if (n == null || Number.isNaN(Number(n))) return '—';
-            return formatKm(n) + suffix;
-        }
-
-        const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-        function formatDate(isoStr) {
-            if (!isoStr) return isoStr;
-            const parts = isoStr.split('-');
-            if (parts.length !== 3) return isoStr;
-            const m = parseInt(parts[1], 10) - 1;
-            return `${MONTH_NAMES[m]} ${parseInt(parts[2], 10)}, ${parts[0]}`;
-        }
-
-        function renderLeaderboard(data) {
-            const board = document.getElementById("leaderboard");
-            const riders = data.leaderboard;
-
-            if (!riders || riders.length === 0) {
-                board.innerHTML = '<p class="empty">No riders registered yet.</p>';
-                return;
-            }
-
-            const maxKm = Math.max(...riders.map(r => r.total_km), 1);
-
-            const weekRange = data.week_start && data.week_end
-                ? `${formatDate(data.week_start)} – ${formatDate(data.week_end)}` : '';
-
-            let html = '<div class="riders">';
-            riders.forEach((rider, idx) => {
-                const pct = Math.min((rider.total_km / maxKm) * 100, 100);
-                const rankClass = idx === 0 && rider.total_km > 0 ? "leader" : "";
-                const avatar = rider.avatar_url
-                    ? `<img src="${rider.avatar_url}" alt="${rider.name}" class="avatar">`
-                    : `<div class="avatar placeholder">${rider.name.charAt(0)}</div>`;
-                const behind =
-                    rider.behind_leader_km <= 0
-                        ? 'Leader'
-                        : `${formatKm(rider.behind_leader_km)} km behind`;
-                const stravaUrl = `https://www.strava.com/athletes/${rider.strava_id}`;
-
-                html += `
-                    <div class="rider-card ${rankClass}">
-                        <div class="rider-header">
-                            ${avatar}
-                            <div class="rider-info">
-                                <span class="rider-name">${rider.name}</span>
-                                <span class="rider-stats">${rider.ride_count} ride${rider.ride_count !== 1 ? 's' : ''}</span>
-                            </div>
-                            <span class="rider-km">${formatKm(rider.total_km)} km</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-fill" style="width: ${pct}%"></div>
-                        </div>
-                        <div class="rider-details">
-                            <div class="rider-stat">
-                                <span class="rider-stat-label">Behind leader</span>
-                                <span class="rider-stat-value">${behind}</span>
-                            </div>
-                            <div class="rider-stat">
-                                <span class="rider-stat-label">Avg ride length</span>
-                                <span class="rider-stat-value">${formatOptional(rider.avg_ride_km, ' km')}</span>
-                            </div>
-                            <div class="rider-stat">
-                                <span class="rider-stat-label">Avg speed (season)</span>
-                                <span class="rider-stat-value">${formatOptional(rider.overall_avg_kmh, ' km/h')}</span>
-                            </div>
-                            <div class="rider-stat">
-                                <span class="rider-stat-label">This week${weekRange ? ` (${weekRange})` : ''}</span>
-                                <div class="rider-stat-subs">
-                                    <div class="rider-stat-sub">
-                                        <span class="rider-stat-sublabel">Distance</span>
-                                        <span class="rider-stat-value">${formatOptional(rider.week_km, ' km')}</span>
-                                    </div>
-                                    <div class="rider-stat-sub">
-                                        <span class="rider-stat-sublabel">Avg speed</span>
-                                        <span class="rider-stat-value">${formatOptional(rider.week_avg_kmh, ' km/h')}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="rider-stat rider-stat-wide rider-stat-actions">
-                                <a class="strava-link" href="${stravaUrl}" target="_blank" rel="noopener noreferrer">View Strava</a>
-                            </div>
-                        </div>
-                    </div>`;
-            });
-            html += '</div>';
-            board.innerHTML = html;
-        }
-
-        const LINE_COLORS = [
-            "#f97316", "#38bdf8", "#a78bfa", "#4ade80",
-            "#fb7185", "#facc15", "#2dd4bf", "#e879f9",
-        ];
-
-        let distanceChartInstance = null;
-
-        function buildPerRideDatasets(timeline) {
-            const byRider = {};
-            timeline.forEach(({ athlete_name, ride_date, distance_km, ride_name }) => {
-                if (!byRider[athlete_name]) byRider[athlete_name] = [];
-                byRider[athlete_name].push({
-                    date: ride_date,
-                    km: distance_km,
-                    rideName: ride_name || "Ride",
-                });
-            });
-
-            return Object.entries(byRider).map(([name, rides], idx) => {
-                let cumulative = 0;
-                const points = rides.map(r => {
-                    cumulative += r.km;
-                    return {
-                        x: r.date,
-                        y: Math.round(cumulative * 10) / 10,
-                        rideKm: Math.round(r.km * 10) / 10,
-                        rideName: r.rideName,
-                    };
-                });
-
-                const color = LINE_COLORS[idx % LINE_COLORS.length];
-                return {
-                    label: name,
-                    data: points,
-                    borderColor: color,
-                    backgroundColor: color + "33",
-                    fill: false,
-                    tension: 0.3,
-                    pointRadius: 4,
-                    pointHoverRadius: 7,
-                    borderWidth: 2,
-                };
-            });
-        }
-
-        function renderDistanceChart(timeline) {
-            const ctx = document.getElementById("distanceChart");
-            if (!timeline || timeline.length === 0) return;
-
-            const datasets = buildPerRideDatasets(timeline);
-
-            if (distanceChartInstance) {
-                distanceChartInstance.data.datasets = datasets;
-                distanceChartInstance.update();
-                return;
-            }
-
-            distanceChartInstance = new Chart(ctx, {
-                type: "line",
-                data: { datasets },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: "nearest", intersect: true },
-                    plugins: {
-                        legend: {
-                            labels: { color: "#f1f5f9", boxWidth: 14 },
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: (item) => {
-                                    const pt = item.dataset.data[item.dataIndex];
-                                    return `${item.dataset.label}: ${pt.rideKm} km ride (${pt.y} km total) — ${pt.rideName}`;
-                                },
-                            },
-                        },
-                    },
-                    scales: {
-                        x: {
-                            type: "time",
-                            time: { unit: "week", tooltipFormat: "MMM d" },
-                            ticks: { color: "#94a3b8" },
-                            grid: { display: false },
-                        },
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                color: "#94a3b8",
-                                callback: (v) => `${v} km`,
-                            },
-                            grid: { color: "rgba(71, 85, 105, 0.4)" },
-                        },
-                    },
-                },
-            });
-        }
-
-        function renderRecent(rides) {
-            const list = document.getElementById("recentRides");
-
-            if (!rides || rides.length === 0) {
-                list.innerHTML = '<li class="empty">No rides yet this season.</li>';
-                return;
-            }
-
-            list.innerHTML = rides.map(r => `
-                <li>
-                    <span class="ride-athlete">${r.athlete_name}</span>
-                    <span class="ride-name">${r.ride_name || 'Ride'}</span>
-                    <span class="ride-distance">${formatKm(r.distance_km)} km</span>
-                    ${r.avg_kmh != null ? `<span class="ride-speed">${formatKm(r.avg_kmh)} km/h</span>` : ''}
-                    <span class="ride-date">${formatDate(r.ride_date)}</span>
-                </li>
-            `).join('');
-        }
-
-        async function refresh() {
-            try {
-                const resp = await fetch("/api/leaderboard");
-                const data = await resp.json();
-                renderLeaderboard(data);
-                renderDistanceChart(data.distance_timeline);
-                renderRecent(data.recent_rides);
-            } catch (err) {
-                console.error("Failed to refresh leaderboard:", err);
-            }
-        }
-
-        refresh();
-        setInterval(refresh, 60000);
-    </script>
+    <script src="{{ url_for('static', filename='js/utils.js') }}?v={{ cache_bust }}"></script>
+    <script src="{{ url_for('static', filename='js/theme.js') }}?v={{ cache_bust }}"></script>
+    <script src="{{ url_for('static', filename='js/versus.js') }}?v={{ cache_bust }}"></script>
+    <script src="{{ url_for('static', filename='js/weekly.js') }}?v={{ cache_bust }}"></script>
+    <script src="{{ url_for('static', filename='js/heatmap.js') }}?v={{ cache_bust }}"></script>
+    <script src="{{ url_for('static', filename='js/chart.js') }}?v={{ cache_bust }}"></script>
+    <script src="{{ url_for('static', filename='js/recent.js') }}?v={{ cache_bust }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v={{ cache_bust }}"></script>
 </body>
 </html>
