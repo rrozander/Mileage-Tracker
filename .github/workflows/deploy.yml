@@ -8,6 +8,10 @@ jobs:
   deploy:
     runs-on: self-hosted
 
+    # PM2 requires HOME; self-hosted runners often omit it.
+    env:
+      HOME: /root
+
     defaults:
       run:
         working-directory: /root/Mileage-Tracker
