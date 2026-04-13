@@ -1,4 +1,5 @@
 import os
+import time
 import threading
 import logging
 from datetime import date, datetime
@@ -14,6 +15,7 @@ import strava_client
 import notifications
 
 app = Flask(__name__)
+CACHE_BUST = str(int(time.time()))
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,7 @@ def index():
         season_year=year,
         season_start=season_start,
         season_end=season_end,
+        cache_bust=CACHE_BUST,
     )
 
 
