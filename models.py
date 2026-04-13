@@ -84,6 +84,7 @@ def init_db():
             ON activities(ride_date);
     """)
     _migrate_strava_app_column(conn)
+    _migrate_moving_time_column(conn)
     conn.commit()
     conn.close()
 
@@ -93,6 +94,13 @@ def _migrate_strava_app_column(conn):
     cols = [row[1] for row in conn.execute("PRAGMA table_info(athletes)").fetchall()]
     if "strava_app" not in cols:
         conn.execute("ALTER TABLE athletes ADD COLUMN strava_app TEXT NOT NULL DEFAULT ''")
+
+
+def _migrate_moving_time_column(conn):
+    """Add moving_time_s to activities if upgrading from an older schema."""
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(activities)").fetchall()]
+    if "moving_time_s" not in cols:
+        conn.execute("ALTER TABLE activities ADD COLUMN moving_time_s INTEGER")
 
 
 def upsert_athlete(strava_id, name, avatar_url, access_token, refresh_token,
@@ -134,16 +142,19 @@ def get_athlete_by_strava_id(strava_id):
     return dict(row) if row else None
 
 
-def upsert_activity(strava_activity_id, athlete_id, distance_km, ride_date, name):
+def upsert_activity(strava_activity_id, athlete_id, distance_km, ride_date, name,
+                    moving_time_s=None):
     conn = get_db()
     conn.execute("""
-        INSERT INTO activities (strava_activity_id, athlete_id, distance_km, ride_date, name)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO activities (strava_activity_id, athlete_id, distance_km, ride_date, name,
+                                moving_time_s)
+        VALUES (?, ?, ?, ?, ?, ?)
         ON CONFLICT(strava_activity_id) DO UPDATE SET
             distance_km=excluded.distance_km,
             ride_date=excluded.ride_date,
-            name=excluded.name
-    """, (strava_activity_id, athlete_id, distance_km, ride_date, name))
+            name=excluded.name,
+            moving_time_s=COALESCE(excluded.moving_time_s, activities.moving_time_s)
+    """, (strava_activity_id, athlete_id, distance_km, ride_date, name, moving_time_s))
     conn.commit()
     conn.close()
 
@@ -177,7 +188,16 @@ def get_leaderboard_stats(year=None):
             a.name,
             a.avatar_url,
             COALESCE(SUM(act.distance_km), 0) AS total_km,
-            COUNT(act.id) AS ride_count
+            COUNT(act.id) AS ride_count,
+            CASE
+                WHEN SUM(CASE WHEN act.moving_time_s IS NOT NULL AND act.moving_time_s > 0
+                              THEN act.moving_time_s ELSE 0 END) > 0
+                THEN SUM(CASE WHEN act.moving_time_s IS NOT NULL AND act.moving_time_s > 0
+                              THEN act.distance_km ELSE 0 END) * 3600.0
+                     / SUM(CASE WHEN act.moving_time_s IS NOT NULL AND act.moving_time_s > 0
+                                THEN act.moving_time_s ELSE 0 END)
+                ELSE NULL
+            END AS overall_avg_kmh
         FROM athletes a
         LEFT JOIN activities act
             ON act.athlete_id = a.id
@@ -188,6 +208,38 @@ def get_leaderboard_stats(year=None):
     """, (season_start, season_end)).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def current_week_iso_bounds():
+    """Monday–Sunday calendar week containing today; return (start, end) as YYYY-MM-DD."""
+    today = date.today()
+    start = today - timedelta(days=today.weekday())
+    end = start + timedelta(days=6)
+    return start.isoformat(), end.isoformat()
+
+
+def get_week_stats_by_athlete(week_start, week_end):
+    """Per-athlete weekly km and avg speed for ride_date in [week_start, week_end]."""
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT
+            athlete_id,
+            COALESCE(SUM(distance_km), 0) AS week_km,
+            CASE
+                WHEN SUM(CASE WHEN moving_time_s IS NOT NULL AND moving_time_s > 0
+                              THEN moving_time_s ELSE 0 END) > 0
+                THEN SUM(CASE WHEN moving_time_s IS NOT NULL AND moving_time_s > 0
+                              THEN distance_km ELSE 0 END) * 3600.0
+                     / SUM(CASE WHEN moving_time_s IS NOT NULL AND moving_time_s > 0
+                                THEN moving_time_s ELSE 0 END)
+                ELSE NULL
+            END AS week_avg_kmh
+        FROM activities
+        WHERE ride_date >= ? AND ride_date <= ?
+        GROUP BY athlete_id
+    """, (week_start, week_end)).fetchall()
+    conn.close()
+    return {r["athlete_id"]: dict(r) for r in rows}
 
 
 def get_distance_timeline(year=None):
@@ -246,7 +298,10 @@ def get_recent_rides(limit=10, year=None):
             act.distance_km,
             act.ride_date,
             a.name AS athlete_name,
-            a.avatar_url
+            a.avatar_url,
+            CASE WHEN act.moving_time_s IS NOT NULL AND act.moving_time_s > 0
+                 THEN act.distance_km * 3600.0 / act.moving_time_s
+                 ELSE NULL END AS avg_kmh
         FROM activities act
         JOIN athletes a ON a.id = act.athlete_id
         WHERE act.ride_date >= ? AND act.ride_date < ?

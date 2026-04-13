@@ -67,9 +67,14 @@ def backfill_athlete(athlete):
         distance = strava_client.activity_distance_km(act)
         ride_date = strava_client.activity_ride_date(act)
         name = act.get("name", "Ride")
-        strava_id = act["id"]
+        activity_id = act["id"]
+        mt = strava_client.activity_moving_time_s(act)
+        moving_time_s = mt if mt > 0 else None
 
-        models.upsert_activity(strava_id, athlete["id"], distance, ride_date, name)
+        models.upsert_activity(
+            activity_id, athlete["id"], distance, ride_date, name,
+            moving_time_s=moving_time_s,
+        )
         count += 1
         print(f"    {ride_date}  {distance:6.1f} km  {name}")
 
