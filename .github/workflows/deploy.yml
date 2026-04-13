@@ -10,7 +10,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: /home/rrozander/Software/Mileage-Tracker
+        working-directory: /root/Mileage-Tracker
 
     steps:
       - name: Pull latest code
